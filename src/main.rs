@@ -20,7 +20,8 @@ pub enum Instruction {
     DUMMY,
     MOVD(Register, u32),
     MOVR(Register, Register),
-    JEQ(Register),
+    JEQ(Register, u32),
+    JLT(Register, u32),
 
     //some instructions have two variants for diff. params internally
     //on an asm/external level, it is one instruction.
@@ -35,7 +36,7 @@ pub enum Instruction {
     ORR(Register, Register),
     NOT(Register),
     LOD(Register, u32),
-    SET(Register, u32),
+    SET(Register),
 }
 
 impl Instruction {
@@ -43,7 +44,7 @@ impl Instruction {
         let opcode = machinecode::get_opcode(&bytes[index]);
         let arg1 = machinecode::get_register(&bytes[index]);
         match &opcode[..] {
-            "0000" => {
+            "00000" => {
                 let val = u32::from_le_bytes([
                     bytes[index + 1],
                     bytes[index + 2],
@@ -52,12 +53,20 @@ impl Instruction {
                 ]);
                 (Instruction::MOVD(arg1, val), 5)
             }
-            "0001" => {
+            "00001" => {
                 let arg2 = machinecode::get_register(&bytes[index + 1]);
                 (Instruction::MOVR(arg1, arg2), 2)
             }
-            "0010" => (Instruction::JEQ(arg1), 1),
-            "0011" => {
+            "00010" => {
+                let val = u32::from_le_bytes([
+                    bytes[index + 1],
+                    bytes[index + 2],
+                    bytes[index + 3],
+                    bytes[index + 4],
+                ]);
+                (Instruction::JEQ(arg1, val), 5)
+            }
+            "00011" => {
                 let val = u32::from_le_bytes([
                     bytes[index + 1],
                     bytes[index + 2],
@@ -66,11 +75,11 @@ impl Instruction {
                 ]);
                 (Instruction::ADDD(arg1, val), 5)
             }
-            "0100" => {
+            "00100" => {
                 let arg2 = machinecode::get_register(&bytes[index + 1]);
                 (Instruction::ADDR(arg1, arg2), 2)
             }
-            "0101" => {
+            "00101" => {
                 let val = u32::from_le_bytes([
                     bytes[index + 1],
                     bytes[index + 2],
@@ -79,11 +88,11 @@ impl Instruction {
                 ]);
                 (Instruction::SUBD(arg1, val), 5)
             }
-            "0110" => {
+            "00110" => {
                 let arg2 = machinecode::get_register(&bytes[index + 1]);
                 (Instruction::SUBR(arg1, arg2), 2)
             }
-            "0111" => {
+            "00111" => {
                 let val = u32::from_le_bytes([
                     bytes[index + 1],
                     bytes[index + 2],
@@ -92,11 +101,11 @@ impl Instruction {
                 ]);
                 (Instruction::ANDD(arg1, val), 5)
             }
-            "1000" => {
+            "01000" => {
                 let arg2 = machinecode::get_register(&bytes[index + 1]);
                 (Instruction::ANDR(arg1, arg2), 2)
             }
-            "1001" => {
+            "01001" => {
                 let val = u32::from_le_bytes([
                     bytes[index + 1],
                     bytes[index + 2],
@@ -105,12 +114,12 @@ impl Instruction {
                 ]);
                 (Instruction::ORD(arg1, val), 5)
             }
-            "1010" => {
+            "01010" => {
                 let arg2 = machinecode::get_register(&bytes[index + 1]);
                 (Instruction::ORR(arg1, arg2), 2)
             }
-            "1101" => (Instruction::NOT(arg1), 1),
-            "1110" => {
+            "01101" => (Instruction::NOT(arg1), 1),
+            "01110" => {
                 let val = u32::from_le_bytes([
                     bytes[index + 1],
                     bytes[index + 2],
@@ -119,14 +128,15 @@ impl Instruction {
                 ]);
                 (Instruction::LOD(arg1, val), 5)
             }
-            "1111" => {
+            "01111" => (Instruction::SET(arg1), 1),
+            "10000" => {
                 let val = u32::from_le_bytes([
                     bytes[index + 1],
                     bytes[index + 2],
                     bytes[index + 3],
                     bytes[index + 4],
                 ]);
-                (Instruction::SET(arg1, val), 5)
+                (Instruction::JLT(arg1, val), 5)
             }
             _ => (Instruction::DUMMY, 0),
         }
@@ -190,9 +200,15 @@ impl Machine {
             Instruction::MOVR(target, source) => {
                 self.set_register(target, self.get_register(source));
             }
-            Instruction::JEQ(register) => {
-                if self.get_register(register) == 0 {
-                    self.reg_ip = self.reg_f;
+            Instruction::JEQ(register, val) => {
+                if self.get_register(register) == self.get_register(Register::F) {
+                    self.reg_ip = val;
+                    jumped = true;
+                }
+            }
+            Instruction::JLT(register, val) => {
+                if self.get_register(register) < self.get_register(Register::F) {
+                    self.reg_ip = val;
                     jumped = true;
                 }
             }
@@ -239,8 +255,8 @@ impl Machine {
                 //check for mem-mapped IO
                 if addr >= 0xFFFF0000 {
                     //we're working with mem-mapped IO
-                    let rebased_addr = addr-0xFFFF0000;
-                     val = u32::from_le_bytes([
+                    let rebased_addr = addr - 0xFFFF0000;
+                    val = u32::from_le_bytes([
                         self.vid_memory[(rebased_addr) as usize],
                         self.vid_memory[(rebased_addr + 1) as usize],
                         self.vid_memory[(rebased_addr + 2) as usize],
@@ -256,12 +272,13 @@ impl Machine {
                 }
                 self.set_register(reg, val)
             }
-            Instruction::SET(reg, val) => {
+            Instruction::SET(reg) => {
                 let bytes = self.get_register(reg).to_le_bytes();
+                let val = self.get_register(Register::F);
                 //check for mem-mapped IO
                 if val >= 0xFFFF0000 {
                     //we're working with mem-mapped IO
-                    let rebased_addr = val-0xFFFF0000;
+                    let rebased_addr = val - 0xFFFF0000;
                     self.vid_memory[(rebased_addr as usize)] = bytes[0];
                     self.vid_memory[(rebased_addr + 1) as usize] = bytes[1];
                     self.vid_memory[(rebased_addr + 2) as usize] = bytes[2];
@@ -279,8 +296,8 @@ impl Machine {
     }
 }
 
-fn fourbit_color(str:&str) -> Color{
-    match str{
+fn fourbit_color(str: &str) -> Color {
+    match str {
         "0000" => Color::WHITE,
         "0001" => Color::DARKGREEN,
         "0010" => Color::GREEN,
@@ -293,18 +310,26 @@ fn fourbit_color(str:&str) -> Color{
         "1001" => Color::PINK,
         "1010" => Color::LIGHTGRAY,
         "1011" => Color::BLACK,
-        _ => Color::BLACK
+        "1100" => Color::MAGENTA,
+        _ => Color::BLACK,
     }
 }
 
-fn colors_from_byte(byte: &u8) -> (Color, Color){
+fn colors_from_byte(byte: &u8) -> (Color, Color) {
     let mut fgs = machinecode::get_fronthalf(byte);
     let mut bgs = machinecode::get_backhalf(byte);
-    (fourbit_color(&fgs),fourbit_color(&bgs))
+    (fourbit_color(&fgs), fourbit_color(&bgs))
 }
 
 fn main() {
     let binfilepath = std::env::args().nth(1).expect("No Binfile path provided!");
+    let dbf = std::env::args().nth(2).unwrap_or("".to_string());
+    let debug: bool;
+    if dbf != "" {
+        debug = true;
+    } else {
+        debug = false;
+    }
     let mut binfilecontents = fs::read(binfilepath).unwrap();
     let proglen = binfilecontents.len();
     let mut mem = vec![0 as u8; 65535 * 4];
@@ -322,10 +347,14 @@ fn main() {
         vid_memory: [0 as u8; 0x2A00],
     };
 
-    let (mut rl, thread) = raylib::init().size(640, 420).title("OrchidEmu").resizable().build();
+    let (mut rl, thread) = raylib::init()
+        .size(640, 420)
+        .title("OrchidEmu")
+        .resizable()
+        .build();
 
     let mut exechalt = false;
-   
+
     loop {
         //== Core Sim Logic
         if !exechalt {
@@ -335,19 +364,23 @@ fn main() {
                 continue;
             }
             let ins = Instruction::from_bytes(&machine.memory, machine.reg_ip as usize);
-            println!("Executing instruction {:?}", ins.0);
+            if debug {
+                println!("Executing instruction {:?}", ins.0);
+            }
             let jmped = machine.exec_instruction(ins.0);
-            println!(
-                "A: {} | B: {} | C: {} | D: {} | E: {} | F: {} | Byte: {:#b} | IP: {}",
-                machine.reg_a,
-                machine.reg_b,
-                machine.reg_c,
-                machine.reg_d,
-                machine.reg_e,
-                machine.reg_f,
-                &machine.memory[machine.reg_ip as usize],
-                machine.reg_ip
-            );
+            if debug {
+                println!(
+                    "A: {} | B: {} | C: {} | D: {} | E: {} | F: {} | Byte: {:#b} | IP: {}",
+                    machine.reg_a,
+                    machine.reg_b,
+                    machine.reg_c,
+                    machine.reg_d,
+                    machine.reg_e,
+                    machine.reg_f,
+                    &machine.memory[machine.reg_ip as usize],
+                    machine.reg_ip
+                );
+            }
             if !jmped {
                 machine.reg_ip += ins.1;
             }
@@ -358,21 +391,22 @@ fn main() {
         d.clear_background(Color::BLACK);
         let mut x = 0;
         let mut y = 0;
-        for i in (0..machine.vid_memory.len()).step_by(2){
-            if machine.vid_memory[i] != 0 as u8{
-            let (fg,bg) = colors_from_byte(&machine.vid_memory[i+1]);
-            if bg != Color::BLACK{
-                d.draw_rectangle(x, y, 5, 10, bg);
+        for i in (0..machine.vid_memory.len()).step_by(2) {
+            if machine.vid_memory[i] != 0 as u8 {
+                let (fg, bg) = colors_from_byte(&machine.vid_memory[i + 1]);
+                if bg != Color::BLACK {
+                    d.draw_rectangle(x, y, 5, 10, bg);
+                }
+                //println!("{} / {:#x}",machine.vid_memory[i] as char,machine.vid_memory[i]);
+                d.draw_text(&*format!("{}", machine.vid_memory[i] as char), x, y, 8, fg);
             }
-            d.draw_text(&*format!("{}",machine.vid_memory[i] as char), x, y, 10, fg);
-            
-        }
             x += 5;
-            if x >= 640{
+            if x >= 640 {
                 x = 0;
                 y += 10;
             }
         }
+        //d.draw_text(&*format!("{}",d.get_fps()), 5, 5, 20, Color::RED);
         if exechalt {
             //d.draw_text("[EXECUTION HALTED]", 5, 5, 20, Color::RED);
         }
