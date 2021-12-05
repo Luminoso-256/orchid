@@ -1,0 +1,4 @@
+Screen:
+640x420
+character display. 64 rows, each character is *assumed* to take up 5 pixels horizontally. 
+takes up D200 bytes.

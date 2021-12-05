@@ -1,4 +1,4 @@
-use crate::{Register};
+use crate::Register;
 
 /*
 - Every instruction starts with a byte laid out as follows:
@@ -9,15 +9,15 @@ the next byte is the second parameter for the instruction. If this is a register
 if it is an immediate value, then the second byte combined with the third byte form the parameter.
 */
 
-pub fn get_opcode(byte:&u8) -> String{
-    let mut s:String = "".to_string();
+pub fn get_opcode(byte: &u8) -> String {
+    let mut s: String = "".to_string();
     //get the bits
-      let mut out:Vec<bool> = vec![];
-    for i in 4..8{
-        out.insert(0,byte & (1 << i) != 0 );
+    let mut out: Vec<bool> = vec![];
+    for i in 4..8 {
+        out.insert(0, byte & (1 << i) != 0);
     }
-    for byte in out{
-        if byte{
+    for byte in out {
+        if byte {
             s += "1"
         } else {
             s += "0"
@@ -25,30 +25,63 @@ pub fn get_opcode(byte:&u8) -> String{
     }
     return s;
 }
-pub fn get_register(byte:&u8) -> Register{
-    let mut s:String = "".to_string();
+pub fn get_register(byte: &u8) -> Register {
+    let mut s: String = "".to_string();
     //get the bits
-      let mut out:Vec<bool> = vec![];
-    for i in 0..4{
-        out.insert(0,byte & (1 << i) != 0 );
+    let mut out: Vec<bool> = vec![];
+    for i in 0..4 {
+        out.insert(0, byte & (1 << i) != 0);
     }
-    for byte in out{
-        if byte{
+    for byte in out {
+        if byte {
             s += "1"
         } else {
             s += "0"
         }
     }
-    let clean_match_statement:&str = &s[..];
-   match clean_match_statement{
-    "0000" => Register::A,
-    "0001" => Register::B,
-    "0010" => Register::C,
-    "0011" => Register::D,
-    "0100" => Register::E,
-    "0101" => Register::F,
-    "0110" => Register::IP,
-    _ => Register::A
-   }
+    let clean_match_statement: &str = &s[..];
+    match clean_match_statement {
+        "0000" => Register::A,
+        "0001" => Register::B,
+        "0010" => Register::C,
+        "0011" => Register::D,
+        "0100" => Register::E,
+        "0101" => Register::F,
+        "0110" => Register::IP,
+        _ => Register::A,
+    }
 }
 
+//generic verisons
+pub fn get_fronthalf(byte: &u8) -> String {
+    let mut s: String = "".to_string();
+    //get the bits
+    let mut out: Vec<bool> = vec![];
+    for i in 4..8 {
+        out.insert(0, byte & (1 << i) != 0);
+    }
+    for byte in out {
+        if byte {
+            s += "1"
+        } else {
+            s += "0"
+        }
+    }
+    return s;
+}
+pub fn get_backhalf(byte: &u8) -> String {
+    let mut s: String = "".to_string();
+    //get the bits
+    let mut out: Vec<bool> = vec![];
+    for i in 0..4 {
+        out.insert(0, byte & (1 << i) != 0);
+    }
+    for byte in out {
+        if byte {
+            s += "1"
+        } else {
+            s += "0"
+        }
+    }
+    return s;
+}
